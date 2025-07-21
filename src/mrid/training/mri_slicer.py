@@ -45,7 +45,9 @@ class MRISlicer:
         elif num_classes is None: raise ValueError('`num_classes` needs to be specified when `seg` is not one-hot encoded.')
 
         self.data: torch.Tensor = data
+        """C, D, H, W"""
         self.seg: torch.Tensor = seg
+        """D, H, W, not one hot encoded"""
         self.num_classes: int = num_classes
 
         if self.data.shape[1:] != self.seg.shape:
@@ -56,6 +58,7 @@ class MRISlicer:
         # here we use binary threshold to pick any segmentation that is not 0 (background)
         # and save indexes of all slices that have segmentation on them
         # save top
+        seg = seg.float()
         for i, sl in enumerate(binary_threshold(seg, 0)):
             if sl.sum() > 0: self.x.append(i)
 
@@ -301,8 +304,8 @@ def randcrop2dt(x: tuple[torch.Tensor, torch.Tensor], size = (96,96)):
     if image.shape[2] == size[1]: starty = 0
     else: starty = random.randint(0, (image.shape[2] - size[1]) - 1)
 
-    return (image[:, startx:startx+size[0], starty:starty+size[1]].to(torch.float32),
-            seg[..., startx:startx+size[0], starty:starty+size[1]].to(torch.float32), )
+    return (image[:, startx:startx+size[0], starty:starty+size[1]],
+            seg[..., startx:startx+size[0], starty:starty+size[1]], )
 
 def shuffle_channels(x:torch.Tensor):
     """Shuffle first axis in a C* tensor"""
@@ -317,16 +320,30 @@ def shuffle_channel_groups(x:torch.Tensor, channels_per: int):
     return img
 
 class ShuffleChannelGroups:
-    def __init__(self, channels_per: int): self.channels_per = channels_per
-    def __call__(self, x: torch.Tensor): return shuffle_channel_groups(x, self.channels_per)
+    def __init__(self, channels_per: int, p: float):
+        self.channels_per = channels_per
+        self.p = p
+    def __call__(self, x: torch.Tensor):
+        return shuffle_channel_groups(x, self.channels_per) if random.random() < self.p else x
 
 
 def groupwise_apply(x:torch.Tensor, fn: Callable[[torch.Tensor], torch.Tensor], channels_per = 3):
     """Apply `fn` to each `channels_per` group of channels in a C* tensor."""
-    num_groups = int(x.shape[0] / channels_per)
+    n_channels = x.shape[0]
+    assert n_channels % channels_per == 0, f'x.shape[0] must be divisible by channels_per, but {x.shape[0]} is not divisible by {channels_per}'
+    num_groups = int(n_channels / channels_per)
     groups = x.reshape(num_groups, channels_per, *x.shape[1:]).unbind(0)
     groups = [fn(i) for i in groups]
     return torch.cat(groups, 0)
+
+def groupwise_apply_batched(x:torch.Tensor, fn: Callable[[torch.Tensor], torch.Tensor], channels_per = 3):
+    """Apply `fn` to each `channels_per` group of channels in a C* tensor, input tensor to fn is (B, H, W)"""
+    batch_size, n_channels = x.shape[0], x.shape[1]
+    assert n_channels % channels_per == 0, f'x.shape[0] must be divisible by channels_per, but {x.shape[0]} is not divisible by {channels_per}'
+    num_groups = int(n_channels / channels_per)
+    groups = x.reshape(batch_size, num_groups, channels_per, *x.shape[2:]).unbind(1)
+    groups = [fn(i) for i in groups]
+    return torch.cat(groups, 1)
 
 class GroupwiseApply:
     def __init__(self, fn: Callable[[torch.Tensor], torch.Tensor], channels_per: int):

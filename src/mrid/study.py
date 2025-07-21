@@ -175,6 +175,13 @@ class Study(UserDict[str, sitk.Image]):
             to = tositk(to)
             d[key] = register(d[key], reference = to, log_to_console=log_to_console)
 
+        for k in d:
+            if k.startswith('seg'):
+                print(f'warning cant register {k}')
+                continue
+            if k != key:
+                d[k] = register(d[k], reference=d[key], log_to_console=log_to_console)
+
         return Study(self.info, **d)
 
 

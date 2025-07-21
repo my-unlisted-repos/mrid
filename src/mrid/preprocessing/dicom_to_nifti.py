@@ -3,7 +3,7 @@ import os, subprocess, shutil
 import tempfile
 import SimpleITK as sitk
 
-def dicom2nifti(inpath:str, outfolder:str, outfname:str, mkdirs=True, save_BIDS=False) -> str:
+def dicom2nifti(inpath:str, outfolder:str, outfname:str, mkdirs=True, save_BIDS=False, allow_stacking=False) -> str:
     """Convert dicom folder to nii.gz and return path to the output file, uses dcm2niix (https://github.com/rordenlab/dcm2niix) which needs to be installed.
 
     Args:
@@ -39,11 +39,10 @@ def dicom2nifti(inpath:str, outfolder:str, outfname:str, mkdirs=True, save_BIDS=
     files_before = os.listdir(outfolder)
 
     # run dcm2niix
-    BIDS = 'y' if save_BIDS else 'n'
     subprocess.run(["dcm2niix",
                     "-z", "y", # compression
-                    "-m", "n", # disable stacking images from different studies
-                    "-b", BIDS, # save additional JSON info that can't be saved into nifti (https://bids.neuroimaging.io/ BIDS sidecar format)
+                    "-m", "y" if allow_stacking else 'n', # disable stacking images from different studies
+                    "-b", 'y' if save_BIDS else 'n', # save additional JSON info that can't be saved into nifti (https://bids.neuroimaging.io/ BIDS sidecar format)
                     "-o", os.path.normpath(outfolder), # output folder
                     "-f", outfname, # output filename
                     os.path.normpath(inpath)], # input folder
